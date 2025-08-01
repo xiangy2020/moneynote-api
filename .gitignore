@@ -37,3 +37,7 @@ out/
 
 *.env
 .metadata
+
+### 
+/src/main/resources/application.properties
+

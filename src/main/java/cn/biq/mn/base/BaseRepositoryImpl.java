@@ -26,4 +26,8 @@ public class BaseRepositoryImpl<T extends BaseEntity> extends QuerydslJpaReposit
         return Optional.ofNullable(result.fetch().get(0)).orElse(BigDecimal.ZERO);
     }
 
+    @Override
+    public JPAQueryFactory getJpaQueryFactory() {
+        return jpaQueryFactory;
+    }
 }

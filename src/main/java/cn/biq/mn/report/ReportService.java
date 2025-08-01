@@ -1,17 +1,30 @@
 package cn.biq.mn.report;
 
-import cn.biq.mn.category.CategoryType;
-import cn.biq.mn.tree.TreeUtils;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+
 import cn.biq.mn.account.Account;
 import cn.biq.mn.account.AccountService;
 import cn.biq.mn.balanceflow.BalanceFlow;
 import cn.biq.mn.balanceflow.BalanceFlowQueryForm;
 import cn.biq.mn.balanceflow.BalanceFlowRepository;
+import cn.biq.mn.balanceflow.DailyBalance;
 import cn.biq.mn.balanceflow.FlowType;
 import cn.biq.mn.base.BaseService;
 import cn.biq.mn.book.Book;
 import cn.biq.mn.category.Category;
 import cn.biq.mn.category.CategoryRepository;
+import cn.biq.mn.category.CategoryType;
 import cn.biq.mn.categoryrelation.CategoryRelation;
 import cn.biq.mn.categoryrelation.CategoryRelationRepository;
 import cn.biq.mn.currency.CurrencyService;
@@ -22,18 +35,9 @@ import cn.biq.mn.tag.Tag;
 import cn.biq.mn.tag.TagRepository;
 import cn.biq.mn.tagrelation.TagRelation;
 import cn.biq.mn.tagrelation.TagRelationRepository;
+import cn.biq.mn.tree.TreeUtils;
 import cn.biq.mn.utils.SessionUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
-
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -235,6 +239,45 @@ public class ReportService {
         result.add(assetChart);
         result.add(debtChart);
         return result;
+    }
+
+    public List<ChartVO> reportDailyBalance() {
+        Group group = sessionUtil.getCurrentGroup();
+        if (group == null) {
+            throw new IllegalStateException("Current group is not available");
+        }
+        List<Account> accounts = accountService.getAssets();
+        accounts.addAll(accountService.getDebts());
+        Map<String, BigDecimal> dailyBalances = getDailyBalances(accounts, group.getDefaultCurrencyCode());
+
+        List<ChartVO> result = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> entry : dailyBalances.entrySet()) {
+            ChartVO vo = new ChartVO();
+            vo.setX(entry.getKey());
+            vo.setY(entry.getValue());
+            result.add(vo);
+        }
+
+        result.sort(Comparator.comparing(ChartVO::getX));
+        return result;
+    }
+
+    private Map<String, BigDecimal> getDailyBalances(List<Account> accounts, String currencyCode) {
+        Map<String, BigDecimal> dailyBalances = new HashMap<>();
+        Group group = sessionUtil.getCurrentGroup();
+        
+        for (Account account : accounts) {
+            List<DailyBalance> balances = balanceFlowRepository.findDailyBalancesByAccount(account.getId());
+            for (DailyBalance balance : balances) {
+                if (balance.getDate() != null) {
+                    String date = balance.getDate().toString();
+                    BigDecimal convertedAmount = currencyService.convert(balance.getAmount(), account.getCurrencyCode(), currencyCode);
+                    dailyBalances.merge(date, convertedAmount, BigDecimal::add);
+                }
+            }
+        }
+        
+        return dailyBalances;
     }
 
 }

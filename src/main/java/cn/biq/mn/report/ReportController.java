@@ -54,4 +54,8 @@ public class ReportController extends BaseController {
         return new DataResponse<>(reportService.reportBalance());
     }
 
+    @RequestMapping(method = RequestMethod.GET, value = "daily-balance")
+    public BaseResponse handleDailyBalance() {
+        return new DataResponse<>(reportService.reportDailyBalance());
+    }
 }
