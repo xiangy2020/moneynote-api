@@ -48,3 +48,21 @@
 - 完善代码最佳实践
 - 完善分组功能
 - 开发微信小程序
+
+
+## 20250801新增首页展示账户的每日变动折线图
+1.每日账户余额曲线图
+1. 实现了`getDailyBalances`方法，用于汇总每日余额数据
+2. 在`BalanceFlowRepository`中添加了`findDailyBalancesByAccount`方法，使用QueryDSL查询每日余额
+3. 在`BaseRepository`和`BaseRepositoryImpl`中添加了`getJpaQueryFactory`方法支持
+4. 在`ReportService`中添加了`reportDailyBalance`方法
+5. 在`ReportController`中添加了新的API接口`/reports/daily-balance`
+6. 确认`ChartVO`类已经满足需求
+测试用例
+已创建测试类ReportServiceTest，添加了testReportDailyBalance方法来验证每日余额曲线图功能。该测试会：
+1. 调用reportDailyBalance方法获取数据
+2. 验证返回结果不为空
+3. 打印日期和金额的表格格式数据
+4. 开发者可以通过控制台输出验证数据是否符合预期
+
+测试一下
