@@ -10,6 +10,7 @@ import lombok.Setter;
 public class BaseResponse {
 
     private boolean success = false;
+    private String message;
 
     public BaseResponse(boolean success) {
         this.success = success;

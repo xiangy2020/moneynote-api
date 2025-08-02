@@ -1,8 +1,27 @@
 package cn.biq.mn.balanceflow;
 
-import cn.biq.mn.exception.FailureMessageException;
-import cn.biq.mn.exception.ItemNotFoundException;
-import cn.biq.mn.utils.MyCollectionUtil;
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+import org.springframework.web.multipart.MultipartFile;
+
 import cn.biq.mn.account.Account;
 import cn.biq.mn.account.AccountRepository;
 import cn.biq.mn.base.BaseService;
@@ -10,6 +29,8 @@ import cn.biq.mn.book.Book;
 import cn.biq.mn.categoryrelation.CategoryRelation;
 import cn.biq.mn.categoryrelation.CategoryRelationForm;
 import cn.biq.mn.categoryrelation.CategoryRelationService;
+import cn.biq.mn.exception.FailureMessageException;
+import cn.biq.mn.exception.ItemNotFoundException;
 import cn.biq.mn.flowfile.FlowFile;
 import cn.biq.mn.flowfile.FlowFileDetails;
 import cn.biq.mn.flowfile.FlowFileMapper;
@@ -20,20 +41,11 @@ import cn.biq.mn.payee.PayeeRepository;
 import cn.biq.mn.tagrelation.TagRelation;
 import cn.biq.mn.tagrelation.TagRelationService;
 import cn.biq.mn.user.User;
+import cn.biq.mn.utils.ExcelUtils;
 import cn.biq.mn.utils.Limitation;
+import cn.biq.mn.utils.MyCollectionUtil;
 import cn.biq.mn.utils.SessionUtil;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.util.List;
-import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -310,6 +322,114 @@ public class BalanceFlowService {
         BalanceFlow flow = baseService.findFlowById(id);
         List<FlowFile> flowFiles = flowFileRepository.findByFlow(flow);
         return flowFiles.stream().map(FlowFileMapper::toDetails).toList();
+    }
+
+    @Transactional
+    public boolean importFromExcel(MultipartFile file) throws IOException {
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("File is empty");
+        }
+        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+            Sheet sheet = workbook.getSheetAt(0);
+            Iterator<Row> rowIterator = sheet.iterator();
+
+            // Get header row to find column indices
+            Row headerRow = sheet.getRow(0);
+            Map<String, Integer> columnIndices = new HashMap<>();
+            for (Cell cell : headerRow) {
+                columnIndices.put(cell.getStringCellValue().toLowerCase(), cell.getColumnIndex());
+            }
+
+            // Validate required columns
+            List<String> requiredColumns = Arrays.asList("create_time", "amount", "type", "book_id", "account_id", "group_id");
+            for (String column : requiredColumns) {
+                if (!columnIndices.containsKey(column.toLowerCase())) {
+                    throw new IllegalArgumentException("Required column '" + column + "' not found in the Excel file.");
+                }
+            }
+
+            // Skip header row
+            // if (rowIterator.hasNext()) {
+            //     rowIterator.next();
+            // }
+
+            boolean skipFirstRow = true;
+
+            while (rowIterator.hasNext()) {
+                
+
+                Row row = rowIterator.next();
+                
+                if (skipFirstRow) {
+                    skipFirstRow = false; // 跳过第一行
+                    continue; // 跳过当前迭代
+                }
+
+                System.out.println("Processing row: " + row.getRowNum());
+                // Parse required fields
+                long createTime = DateUtil.getJavaDate(row.getCell(columnIndices.get("create_time")).getNumericCellValue()).getTime();
+                double amountValue = row.getCell(columnIndices.get("amount")).getNumericCellValue();
+                BigDecimal amount = BigDecimal.valueOf(amountValue);
+                int typeValue = (int) row.getCell(columnIndices.get("type")).getNumericCellValue();
+                FlowType type = FlowType.fromCode(typeValue);
+                int bookId = (int) row.getCell(columnIndices.get("book_id")).getNumericCellValue();
+                // int creatorId = (int) row.getCell(columnIndices.get("creator_id")).getNumericCellValue();
+
+                int groupId = (int) row.getCell(columnIndices.get("group_id")).getNumericCellValue();
+                int creatorId = ExcelUtils.getSafeIntCellValue(row, columnIndices, "creator_id", 1);
+                // Parse optional fields
+                // boolean confirm = row.getCell(columnIndices.getOrDefault("confirm", -1)) != null && 
+                //                   row.getCell(columnIndices.getOrDefault("confirm", -1)).getBooleanCellValue();
+                boolean confirm = ExcelUtils.getSafeBooleanCellValue(row, columnIndices, "confirm", false); 
+
+                // double convertedAmountValue = row.getCell(columnIndices.getOrDefault("converted_amount", -1)) != null ? 
+                //                         row.getCell(columnIndices.getOrDefault("converted_amount", -1)).getNumericCellValue() : 0.0;
+
+                double convertedAmountValue = ExcelUtils.getSafeDoubleCellValue(row, columnIndices, "converted_amount", 0.0);
+                BigDecimal convertedAmount = BigDecimal.valueOf(convertedAmountValue);
+                boolean include = ExcelUtils.getSafeBooleanCellValue(row, columnIndices, "include", false); 
+                // boolean include = row.getCell(columnIndices.getOrDefault("include", -1)) != null && 
+                //                  row.getCell(columnIndices.getOrDefault("include", -1)).getBooleanCellValue();
+                long insertAt = System.currentTimeMillis();
+                // String notes = row.getCell(columnIndices.getOrDefault("notes", -1)) != null ? 
+                //                row.getCell(columnIndices.getOrDefault("notes", -1)).getStringCellValue() : "";
+                String notes = ExcelUtils.getSafeStringCellValue(row, columnIndices, "notes", "");
+                // String title = row.getCell(columnIndices.getOrDefault("title", -1)) != null ? 
+                //                row.getCell(columnIndices.getOrDefault("title", -1)).getStringCellValue() : "";
+                String title = ExcelUtils.getSafeStringCellValue(row, columnIndices, "title", "");
+                int accountId = ExcelUtils.getSafeIntCellValue(row, columnIndices, "accountId", 1);
+                // int accountId = row.getCell(columnIndices.getOrDefault("account_id", -1)) != null ? 
+                //                 (int) row.getCell(columnIndices.getOrDefault("account_id", -1)).getNumericCellValue() : 0;
+                int payeeId = ExcelUtils.getSafeIntCellValue(row, columnIndices, "payeeId", 1);
+                // int payeeId = row.getCell(columnIndices.getOrDefault("payee_id", -1)) != null ? 
+                //               (int) row.getCell(columnIndices.getOrDefault("payee_id", -1)).getNumericCellValue() : 0;
+                // int toId = row.getCell(columnIndices.getOrDefault("to_id", -1)) != null ? 
+                //            (int) row.getCell(columnIndices.getOrDefault("to_id", -1)).getNumericCellValue() : 0;
+                
+                // Create and save BalanceFlow entity
+                BalanceFlow balanceFlow = new BalanceFlow();
+                balanceFlow.setCreateTime(createTime);
+                balanceFlow.setAmount(amount);
+                balanceFlow.setType(type);
+                balanceFlow.setBookId(bookId);
+                balanceFlow.setCreatorId(creatorId);
+                balanceFlow.setGroupId(groupId);
+                balanceFlow.setConfirm(confirm);
+                balanceFlow.setConvertedAmount(convertedAmount);
+                balanceFlow.setInclude(include);
+                balanceFlow.setInsertAt(insertAt);
+                balanceFlow.setNotes(notes);
+                balanceFlow.setTitle(title);
+                balanceFlow.setAccountId(accountId);
+                balanceFlow.setPayeeId(payeeId);
+                // balanceFlow.setToId(toId);
+                
+                balanceFlowRepository.save(balanceFlow);
+            }
+            return true;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to import Excel file", e);
+        }
     }
 
 }

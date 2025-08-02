@@ -65,4 +65,7 @@
 3. 打印日期和金额的表格格式数据
 4. 开发者可以通过控制台输出验证数据是否符合预期
 
-测试一下
+## 20250801新增导入账单功能
+前端调用api/flow/import实现将excle表中的数据导入到数据库中
+实现 /api/flow/import 功能，包括在 BalanceFlowController 中添加API端点和在 BalanceFlowService 中实现Excel数据导入逻辑。
+前端可以通过调用此API将Excel表中的数据导入到数据库
