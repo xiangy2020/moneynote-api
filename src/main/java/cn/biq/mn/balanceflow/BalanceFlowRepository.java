@@ -1,5 +1,6 @@
 package cn.biq.mn.balanceflow;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import org.springframework.stereotype.Repository;
@@ -28,7 +29,7 @@ public interface BalanceFlowRepository extends BaseRepository<BalanceFlow>  {
     List<BalanceFlow> findAllByBookOrderByCreateTimeDesc(Book book);
 
     default List<DailyBalance> findDailyBalancesByAccount(Integer accountId) {
-        return getJpaQueryFactory()
+        List<DailyBalance> dailyChanges = getJpaQueryFactory()
                 .select(
                         Projections.constructor(
                                 DailyBalance.class,
@@ -37,12 +38,21 @@ public interface BalanceFlowRepository extends BaseRepository<BalanceFlow>  {
                                 .when(balanceFlow.type.eq(FlowType.EXPENSE))
                                         .then(balanceFlow.amount.negate())
                                 .otherwise(balanceFlow.amount)
-                                .sum()  // 对条件表达式结果求和
+                                .sum()
                         )
                 )
                 .from(balanceFlow)
                 .where(balanceFlow.account.id.eq(accountId))
                 .groupBy(Expressions.stringTemplate("FUNCTION('FROM_UNIXTIME', {0}/1000, '%Y-%m-%d')", balanceFlow.createTime))
+                .orderBy(Expressions.stringTemplate("FUNCTION('FROM_UNIXTIME', {0}/1000, '%Y-%m-%d')", balanceFlow.createTime).asc())
                 .fetch();
+
+        BigDecimal cumulativeBalance = BigDecimal.ZERO;
+        for (DailyBalance dailyChange : dailyChanges) {
+            cumulativeBalance = cumulativeBalance.add(dailyChange.getAmount());
+            dailyChange.setAmount(cumulativeBalance);
+        }
+        return dailyChanges;
     }
+
 }

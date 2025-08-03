@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -367,7 +366,8 @@ public class BalanceFlowService {
 
                 System.out.println("Processing row: " + row.getRowNum());
                 // Parse required fields
-                long createTime = DateUtil.getJavaDate(row.getCell(columnIndices.get("create_time")).getNumericCellValue()).getTime();
+                double createTimeValue = row.getCell(columnIndices.get("create_time")).getNumericCellValue();
+                long createTime = (long) (createTimeValue * 1000); // 秒级时间戳转换为毫秒级时间戳
                 double amountValue = row.getCell(columnIndices.get("amount")).getNumericCellValue();
                 BigDecimal amount = BigDecimal.valueOf(amountValue);
                 int typeValue = (int) row.getCell(columnIndices.get("type")).getNumericCellValue();
